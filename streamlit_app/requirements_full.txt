@@ -1,0 +1,9 @@
+streamlit
+pandas
+tensorflow==2.16.1
+numpy
+gcsfs
+pyarrow
+llama-cpp-python
+torch
+transformers

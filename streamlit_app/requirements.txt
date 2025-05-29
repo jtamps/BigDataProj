@@ -1,9 +1,9 @@
 streamlit
 pandas
-tensorflow==2.16.1
 numpy
 gcsfs
 pyarrow
-llama-cpp-python
-torch
-transformers
+# llama-cpp-python  # Temporarily disabled
+# torch              # Temporarily disabled  
+# transformers       # Temporarily disabled
+# tensorflow==2.16.1 # Temporarily disabled 
