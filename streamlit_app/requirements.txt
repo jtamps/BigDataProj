@@ -4,3 +4,7 @@ numpy
 gcsfs
 pyarrow
 tensorflow==2.16.1
+llama-cpp-python
+torch
+transformers
+scikit-learn
