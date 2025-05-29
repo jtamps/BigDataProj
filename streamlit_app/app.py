@@ -28,13 +28,15 @@ st.set_page_config(layout="wide")
 # --- Application Constants & Configuration ---
 # Get the absolute path to the directory where this script is located
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REC_MODEL_PATH = os.path.join(SCRIPT_DIR, "pet_model.h5") # Make it absolute
-PETS_DATA_PATH = os.path.join(SCRIPT_DIR, "data/pets_silver_local/pets_silver") # Make it absolute
-ADOPTERS_DATA_PATH = os.path.join(SCRIPT_DIR, "data/adopters_local/Adopters") # Make it absolute
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR) # Go up one level to project root
+
+REC_MODEL_PATH = os.path.join(SCRIPT_DIR, "pet_model.h5") # Model is in the same dir as app.py
+PETS_DATA_PATH = os.path.join(PROJECT_ROOT, "data/pets_silver_local/pets_silver") # Data is in project_root/data/
+ADOPTERS_DATA_PATH = os.path.join(PROJECT_ROOT, "data/adopters_local/Adopters") # Data is in project_root/data/
 TOP_K_RECOMMENDATIONS = 3
 
 # --- Llama Model Configuration ---
-LLAMA_MODEL_PATH = os.getenv("LLAMA_MODEL_PATH", os.path.join(SCRIPT_DIR, "models/llama-3-8b-instruct.Q4_K_M.gguf")) # Make it absolute
+LLAMA_MODEL_PATH = os.getenv("LLAMA_MODEL_PATH", os.path.join(SCRIPT_DIR, "models/llama-3-8b-instruct.Q4_K_M.gguf")) # LLM model path relative to script dir
 N_GPU_LAYERS = -1 
 N_CTX = 2048
 
