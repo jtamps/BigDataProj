@@ -1,0 +1,9 @@
+streamlit
+pandas
+tensorflow
+numpy
+gcsfs
+pyarrow
+llama-cpp-python
+torch
+transformers
