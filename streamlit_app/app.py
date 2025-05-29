@@ -26,13 +26,15 @@ except ImportError:
 st.set_page_config(layout="wide")
 
 # --- Application Constants & Configuration ---
-REC_MODEL_PATH = "pet_model.h5"
-PETS_DATA_PATH = "data/pets_silver_local/pets_silver" # This should be a directory path for pd.read_parquet
-ADOPTERS_DATA_PATH = "data/adopters_local/Adopters" # This should be a directory path for pd.read_parquet
+# Get the absolute path to the directory where this script is located
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REC_MODEL_PATH = os.path.join(SCRIPT_DIR, "pet_model.h5") # Make it absolute
+PETS_DATA_PATH = os.path.join(SCRIPT_DIR, "data/pets_silver_local/pets_silver") # Make it absolute
+ADOPTERS_DATA_PATH = os.path.join(SCRIPT_DIR, "data/adopters_local/Adopters") # Make it absolute
 TOP_K_RECOMMENDATIONS = 3
 
 # --- Llama Model Configuration ---
-LLAMA_MODEL_PATH = os.getenv("LLAMA_MODEL_PATH", "models/llama-3-8b-instruct.Q4_K_M.gguf")
+LLAMA_MODEL_PATH = os.getenv("LLAMA_MODEL_PATH", os.path.join(SCRIPT_DIR, "models/llama-3-8b-instruct.Q4_K_M.gguf")) # Make it absolute
 N_GPU_LAYERS = -1 
 N_CTX = 2048
 
