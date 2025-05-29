@@ -1,6 +1,6 @@
 streamlit
 pandas
-tensorflow
+tensorflow>=2.11,<2.17
 numpy
 gcsfs
 pyarrow
