@@ -110,6 +110,51 @@ During a focused troubleshooting and enhancement session, several key improvemen
     *   Modifying the `@st.cache_data` decorated function `get_match_explanation` to include an additional parameter (`pet_id_for_cache_key`).
     *   Passing a unique pet identifier (Animal ID) to this parameter for each pet, ensuring Streamlit's caching mechanism treats each call as distinct, thus generating a unique explanation per pet.
 
+## VI. Recent Development and Changelog (Late May - Early June 2024)
+
+This section details significant efforts in deploying the Streamlit application to Streamlit Community Cloud, along with substantial performance enhancements, UI/UX refinements, and bug fixes.
+
+### A. Deployment to Streamlit Community Cloud
+
+*   **Python Version Management:**
+    *   Successfully configured the deployment environment to use Python 3.11.x, which was crucial for TensorFlow compatibility. This involved using a `.python-version` file and ensuring `runtime.txt` correctly specified `python-3.11.9`.
+*   **Dependency Management for Cloud:**
+    *   Iteratively refined `requirements.txt` to balance functionality and deployment speed.
+    *   Initially deployed with a minimal set (`streamlit`, `pandas`, `numpy`, `gcsfs`, `pyarrow`, `tensorflow==2.16.1`, `scikit-learn`).
+    *   `llama-cpp-python` was temporarily removed due to causing TensorFlow import errors in the cloud environment. The app was updated to gracefully disable LLM explanations if `llama-cpp-python` is unavailable.
+*   **Data and Model Path Handling:**
+    *   Adjusted file paths in `app.py` to use absolute paths relative to the script's location and project root, resolving "file not found" errors for pet data, adopter data, and the TensorFlow model (`pet_model.h5`) on Streamlit Cloud.
+*   **Git Hygiene and Security:**
+    *   Added large LLM model files (`.gguf`) to `.gitignore`.
+    *   Removed an accidentally committed OpenAI API key from `secrets.toml` by rewriting Git history and adding `secrets.toml` to `.gitignore`.
+    *   Systematically committed untracked project files.
+
+### B. Performance Optimizations
+
+*   **Batch Prediction Implementation:**
+    *   Refactored the `rank_pets` function and introduced `preprocess_batch_input_for_model` to perform pet-adopter matching using batch predictions with the TensorFlow model.
+    *   This significantly reduced prediction time from ~2-3 minutes to a few seconds for a sample of 2000 pets.
+    *   Addressed `fillna` errors in the batch preprocessing logic specific to the Streamlit Cloud environment by ensuring `fillna` always received a concrete scalar value.
+*   **Cached Llama Import Check:**
+    *   Moved the `llama_cpp` import check into a `@st.cache_resource` decorated function to prevent repeated import attempts and warning messages on every Streamlit script rerun, improving stability and reducing log clutter.
+
+### C. UI/UX Enhancements and Bug Fixes
+
+*   **Refactored Application Structure (`app.py`):**
+    *   Major refactor focusing on improved error handling, efficiency, and code organization.
+    *   Introduced a `Config` class for constants, error handling utilities (`error_handler`, `safe_operation`), a `BatchProcessor` class, and an `initialize_app_resources` function for centralized resource loading.
+    *   Improved UI helper functions for status display, UI option generation, and recommendation display.
+*   **LLM Message Handling:**
+    *   Removed UI messages indicating LLM unavailability for a cleaner interface when LLM explanations are disabled.
+*   **NaN Pet Name Handling:**
+    *   Improved the display of pets with missing or invalid names. Instead of showing "NaN" or "Pet #ID", it now defaults to "Unnamed Pet".
+    *   Added logic to clean pet names of unrenderable non-ASCII characters, preventing display issues like "".
+
+### D. General Code Health
+*   Consistent use of logging for better traceability.
+*   Type hinting added for improved code readability and maintainability.
+*   Modular function design.
+
 ## IV. Core Project Artifacts and Scripts
 
 This section lists the key files, data, and scripts that constitute the project:
