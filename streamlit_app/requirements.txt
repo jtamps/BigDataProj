@@ -5,4 +5,3 @@ gcsfs
 pyarrow
 tensorflow==2.16.1
 scikit-learn
-llama-cpp-python
