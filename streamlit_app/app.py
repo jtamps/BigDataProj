@@ -301,6 +301,30 @@ def rank_pets_batch(adopter_profile: Dict, all_pets_df: pd.DataFrame, _model: tf
     top_recommendations = ranked_pets.head(top_k)
     
     logger.info(f"Ranking complete. Top {top_k} scores: {top_recommendations['score'].tolist()}")
+
+    # --- Enhanced Logging for Score Verification ---
+    # Check for perfect or near-perfect scores
+    perfect_threshold = 0.999
+    perfect_scores_df = ranked_pets[ranked_pets['score'] >= perfect_threshold]
+    num_perfect_scores = len(perfect_scores_df)
+
+    if num_perfect_scores > 0:
+        logger.warning(f"{num_perfect_scores} pets achieved a score >= {perfect_threshold} for adopter {adopter_id}.")
+        # Log details of up to 3 such pets for inspection
+        for i, (_, pet_row) in enumerate(perfect_scores_df.head(3).iterrows()):
+            logger.warning(
+                f"Perfect Score Pet #{i+1} (ID: {pet_row.get('Animal ID', 'N/A')}, Score: {pet_row['score']:.4f}):\n"
+                f"  Pet Type: {pet_row.get('Animal Type')}, Breed: {pet_row.get('Breed')}, Age: {pet_row.get('Age upon Outcome')}, Size: {pet_row.get('Size')}\n"
+                f"  Adopter Profile: {adopter_profile}"
+            )
+    else:
+        logger.info(f"No pets achieved a score >= {perfect_threshold} for adopter {adopter_id}.")
+    
+    # Log score distribution stats
+    score_stats = ranked_pets['score'].agg(['count', 'min', 'max', 'mean', 'median', 'std']).to_dict()
+    logger.info(f"Score distribution for adopter {adopter_id}: {score_stats}")
+    # --- End Enhanced Logging ---
+
     return top_recommendations, ranked_pets
 
 # --- LLM Explanation Generation (Now OpenAI) ---
@@ -652,10 +676,44 @@ def main():
     
     # Debug info (only if enabled)
     if os.getenv("STREAMLIT_DEBUG_MODE") == "true" and not st.session_state.all_scores_df.empty:
-        with st.expander("🔧 Debug Information"):
-            st.subheader("All Pet Scores (Sample)")
-            st.dataframe(st.session_state.all_scores_df.head(20))
-            st.caption(f"Showing sample of {len(st.session_state.all_scores_df)} scored pets")
+        with st.expander("🔧 Debug Information: Score Analysis", expanded=False):
+            all_scores_df = st.session_state.all_scores_df
+            st.subheader("Score Distribution Statistics")
+            st.dataframe(all_scores_df['score'].describe().to_frame().T) # Show full describe() output
+
+            st.subheader("Score Histogram")
+            # Using Altair for a simple histogram, as st.pyplot can be heavy
+            try:
+                import altair as alt
+                chart = alt.Chart(all_scores_df).mark_bar().encode(
+                    alt.X("score:Q", bin=alt.Bin(maxbins=50), title="Match Score"),
+                    alt.Y('count()', title="Number of Pets")
+                ).properties(
+                    title='Distribution of Match Scores in Sampled Batch'
+                )
+                st.altair_chart(chart, use_container_width=True)
+            except ImportError:
+                st.caption("Altair library not found. Skipping histogram. Add 'altair' to requirements to see this.")
+            except Exception as e:
+                st.caption(f"Could not generate histogram: {e}")
+
+            st.subheader(f"Top Scoring Pets in Sample (Max {Config.BATCH_SIZE})")
+            # Display top N, e.g., top 10 or all if less than 10
+            num_to_show = min(10, len(all_scores_df))
+            st.dataframe(all_scores_df.head(num_to_show)[
+                ['Animal ID', 'Name', 'Animal Type', 'Breed', 'Age upon Outcome', 'Size', 'score']
+            ])
+            
+            # Show details of any perfect/near-perfect scores found
+            perfect_threshold_debug = 0.999
+            perfect_scores_debug_df = all_scores_df[all_scores_df['score'] >= perfect_threshold_debug]
+            if not perfect_scores_debug_df.empty:
+                st.subheader(f"Pets with Score >= {perfect_threshold_debug}")
+                st.dataframe(perfect_scores_debug_df[
+                    ['Animal ID', 'Name', 'Animal Type', 'Breed', 'Age upon Outcome', 'Size', 'score']
+                ])
+            
+            st.caption(f"Displaying analysis for a sample of {len(all_scores_df)} pets.")
 
 if __name__ == "__main__":
     main()
