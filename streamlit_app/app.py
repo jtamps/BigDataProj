@@ -13,17 +13,22 @@ import re # For parse_age_years
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Try to import llama_cpp, fallback gracefully if not available
-try:
-    from llama_cpp import Llama
-    LLAMA_AVAILABLE = True
-except ImportError:
-    logger.warning("llama_cpp not available. LLM explanations will be disabled.")
-    LLAMA_AVAILABLE = False
-    Llama = None
-
 # --- Page Configuration (MUST BE FIRST STREAMLIT COMMAND) ---
 st.set_page_config(layout="wide")
+
+# --- Check Llama Availability (Cached) ---
+@st.cache_resource
+def check_llama_availability():
+    """Check if llama_cpp is available, with caching to avoid repeated checks."""
+    try:
+        from llama_cpp import Llama
+        logger.info("llama_cpp is available. LLM explanations will be enabled if model is found.")
+        return True, Llama
+    except ImportError:
+        logger.warning("llama_cpp not available. LLM explanations will be disabled.")
+        return False, None
+
+LLAMA_AVAILABLE, Llama = check_llama_availability()
 
 # --- Application Constants & Configuration ---
 # Get the absolute path to the directory where this script is located
