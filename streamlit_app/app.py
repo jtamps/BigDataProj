@@ -536,17 +536,25 @@ def create_adopter_profile_ui():
 
 def display_pet_recommendation(pet_data: pd.Series, index: int):
     """Display a single pet recommendation."""
-    # Retrieve pet name and Animal ID
     raw_pet_name = pet_data.get('Name')
-    animal_id = pet_data.get('Animal ID', 'Unknown ID') # Ensure animal_id has a fallback
+    animal_id = pet_data.get('Animal ID', 'Unknown ID')
 
-    # Handle NaN or None names by using a default format
-    if pd.isna(raw_pet_name) or raw_pet_name == 'nan': # Check for NaN, None, or literal 'nan' string
-        pet_name = f"Pet #{animal_id}"
+    # List of placeholder/invalid names to check (case-insensitive)
+    invalid_names_to_check = ["nan", "unknown", "no name", "", None]
+
+    # Handle NaN, None, or common placeholder strings for names
+    if pd.isna(raw_pet_name) or (isinstance(raw_pet_name, str) and raw_pet_name.strip().lower() in invalid_names_to_check):
+        pet_name_cleaned = f"Pet #{animal_id}"
     else:
-        pet_name = str(raw_pet_name) # Ensure name is a string
+        # Clean the name: remove non-ASCII characters and strip leading/trailing whitespace
+        # This helps prevent the diamond question mark () issue.
+        pet_name_cleaned = str(raw_pet_name).encode('ascii', 'ignore').decode('ascii').strip()
+        # If cleaning results in an empty string, fall back to default
+        if not pet_name_cleaned:
+            pet_name_cleaned = f"Pet #{animal_id}"
     
-    st.markdown(f"### �� {pet_name}")
+    # Use the paw_print emoji directly in the f-string for clarity
+    st.markdown(f"### 🐾 {pet_name_cleaned}")
     
     # Pet details in a nice format
     col1, col2 = st.columns(2)
