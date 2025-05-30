@@ -161,6 +161,7 @@ def load_parquet_data(data_path: str, data_name: str) -> pd.DataFrame:
         logger.info(f"Loading {data_name} data from {data_path}")
         df = pd.read_parquet(data_path)
         logger.info(f"{data_name} loaded: {df.shape[0]:,} rows, {df.shape[1]} columns")
+        logger.info(f"Columns in {data_name} DataFrame: {df.columns.tolist()}")
         return df
     
     return pd.DataFrame()
@@ -340,65 +341,76 @@ def rank_pets_batch(adopter_profile: Dict, all_pets_df: pd.DataFrame, _model: tf
 
 # --- LLM Explanation Generation (Now OpenAI) ---
 @st.cache_data
-def generate_match_explanation(_adopter_profile: Dict, _pet_details: pd.Series, 
-                             _openai_client: openai.OpenAI, pet_id: str) -> str:
-    """Generate LLM explanation using OpenAI API with error handling."""
+def generate_match_explanation(
+    _openai_client: Optional[openai.OpenAI],
+    adopter_profile_str: str,
+    pet_profile_str: str,
+    pet_name: str,
+    pet_id: str,
+    explanation_style: str = "concise",
+) -> Optional[str]:
+    """Generates a match explanation using the OpenAI API."""
     if not _openai_client:
-        # This case should ideally be handled before calling, 
-        # e.g., by checking if the client is available in app_resources
-        logger.warning("OpenAI client not available for generating explanation.")
-        return "Explanations are currently unavailable (client not initialized)."
-    
-    try:
-        # Extract adopter info safely
-        adopter_info = {
-            'age': _adopter_profile.get('age', 'N/A'),
-            'household_size': _adopter_profile.get('household_size', 'N/A'),
-            'housing': _adopter_profile.get('housing', 'N/A'),
-            'activity': _adopter_profile.get('activity', 'N/A'),
-            'has_prior_pets': 'Yes' if _adopter_profile.get('has_prior_pets', False) else 'No'
-        }
-        
-        # Extract pet info safely
-        pet_info = {
-            'name': _pet_details.get('Name', 'This pet'),
-            'type': _pet_details.get('Animal Type', 'N/A'),
-            'breed': _pet_details.get('Breed', 'N/A'),
-            'age': _pet_details.get('Age upon Outcome', 'N/A'),
-            'size': _pet_details.get('Size', 'unknown size'),
-            'sex': _pet_details.get('Sex upon Outcome', 'N/A')
-        }
-        
-        # Create prompt (can be refined for OpenAI if needed)
-        system_message = "You are a helpful pet adoption counselor. Be positive, encouraging, and concise (2-3 sentences). Focus on compatibility aspects derived from the provided profiles."
-        user_prompt = f"""Consider an adopter who is {adopter_info['age']} years old, has a household of {adopter_info['household_size']}, lives in a {adopter_info['housing']}, has a {adopter_info['activity']} activity level, and {adopter_info['has_prior_pets']} owned pets before. 
-They are being matched with a pet named {pet_info['name']}, a {pet_info['age']} {pet_info['type']} ({pet_info['breed']}, {pet_info['size']}).
+        # This case should ideally be handled by get_openai_client's logging/warnings
+        logger.warning(
+            f"OpenAI client not available for pet {pet_id}. Skipping explanation."
+        )
+        return None
 
-Why might this pet be a good match for this adopter?"""
-        
-        logger.info(f"Sending explanation prompt to OpenAI for pet {pet_id}")
+    base_prompt = Config.EXPLANATION_PROMPT_CONCISE
+    if explanation_style == "detailed":
+        base_prompt = Config.EXPLANATION_PROMPT_DETAILED
+    elif explanation_style == "bullet_points":
+        base_prompt = Config.EXPLANATION_PROMPT_BULLET
+
+    prompt = base_prompt.format(
+        adopter_profile=adopter_profile_str, pet_profile=pet_profile_str
+    )
+
+    try:
+        logger.info(
+            f"Generating OpenAI explanation for pet {pet_id} ({pet_name}) using model {Config.OPENAI_MODEL} with style {explanation_style}."
+        )
         completion = _openai_client.chat.completions.create(
             model=Config.OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_prompt}
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt},
             ],
-            max_tokens=120, # Adjusted for conciseness
-            temperature=0.7
+            temperature=Config.OPENAI_TEMPERATURE,
+            max_tokens=Config.OPENAI_MAX_TOKENS,
         )
-        
-        explanation = completion.choices[0].message.content.strip()
-        logger.info(f"Generated OpenAI explanation for pet {pet_id}")
-        return explanation
-        
+        explanation = completion.choices[0].message.content
+        logger.info(
+            f"Successfully generated explanation for pet {pet_id} ({pet_name})."
+        )
+        return explanation.strip() if explanation else None
+    except openai.RateLimitError as e:
+        logger.error(
+            f"OpenAI API rate limit or quota exceeded when generating explanation for pet {pet_id} ({pet_name}): {e}"
+        )
+        st.warning(
+            "🐾 Oh no! It looks like we've hit our current limit with the "
+            "AI explanation service (OpenAI). Match explanations are temporarily unavailable. "
+            "Please check your OpenAI account for quota and billing details. "
+            "You can still see matches without the detailed AI insights for now!"
+        )
+        return "OpenAI API quota exceeded. Explanations are temporarily unavailable."
+    except openai.APIError as e:
+        logger.error(
+            f"OpenAI API error when generating explanation for pet {pet_id} ({pet_name}): {e}"
+        )
+        st.error(
+            f"An unexpected error occurred with the OpenAI API while generating an explanation for {pet_name}. "
+            "Please try again later. If the issue persists, the OpenAI service might be experiencing problems."
+        )
+        return "Could not generate explanation due to an OpenAI API error."
     except Exception as e:
-        logger.error(f"Error generating OpenAI explanation for pet {pet_id}: {e}", exc_info=True)
-        # Provide a more user-friendly error if it's an API connection or auth issue
-        if isinstance(e, openai.APIConnectionError):
-            return "Could not connect to the explanation service. Please try again later."
-        if isinstance(e, openai.AuthenticationError):
-            return "Explanation service authentication failed. Please check API key configuration."
-        return "Could not generate an explanation at this time due to an unexpected error."
+        logger.error(
+            f"An unexpected error occurred in generate_match_explanation for pet {pet_id} ({pet_name}): {e}",
+            exc_info=True,
+        )
+        return "Could not generate explanation due to an unexpected error."
 
 # --- Initialize App Resources ---
 @st.cache_resource
@@ -608,13 +620,22 @@ def display_pet_recommendation(pet_data: pd.Series, index: int):
     # LLM explanation (now OpenAI)
     if app_resources['openai_client']:
         with st.spinner("Generating explanation..."):
+            # Prepare pet profile string for LLM, excluding the 'Name' field
+            pet_data_for_llm = pet_data.copy()
+            if 'Name' in pet_data_for_llm.index: # Check if 'Name' is in the Series index
+                pet_data_for_llm = pet_data_for_llm.drop('Name')
+            pet_profile_for_llm_str = pet_data_for_llm.to_string()
+
             explanation = generate_match_explanation(
-                st.session_state.adopter_profile,
-                pet_data,
                 app_resources['openai_client'],
-                str(pet_data.get('Animal ID', f'pet_{index}'))
+                str(st.session_state.adopter_profile),
+                pet_profile_for_llm_str, # Use the modified string without the pet's name
+                pet_name_cleaned, # Still pass cleaned name for logging purposes
+                str(pet_data.get('Animal ID', f'pet_{index}')),
+                "concise" # Current explanation style
             )
-            st.info(f"**Why this is a great match:** {explanation}")
+            if explanation:
+                st.info(f"**Why this is a great match:** {explanation}")
 
 # --- Main App UI ---
 def main():

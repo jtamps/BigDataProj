@@ -180,4 +180,17 @@ This section lists the key files, data, and scripts that constitute the project:
 *   **Dependencies:** The `openai` library will be installed from `requirements.txt`. No local LLM model file needs to be deployed with the app.
 *   **Resource Limits:** Using the OpenAI API offloads the LLM computation, reducing local resource needs (CPU/RAM) compared to running a local Llama model.
 
+### Troubleshooting
+
+*   **OpenAI API Key Issues:**
+    *   If you see warnings like "OpenAI client not initialized" or "Explanations are currently unavailable", ensure your `OPENAI_API_KEY` is correctly set up:
+        *   **Local Development:** In a `.streamlit/secrets.toml` file at the project root (`/Users/jeremy/BigDataProj/.streamlit/secrets.toml`).
+        *   **Streamlit Community Cloud:** In the application's secrets manager.
+    *   The app includes diagnostic logging (visible in your terminal when running locally) to help trace how the API key is being loaded.
+    *   **Quota Issues:** If you encounter errors related to API quotas (e.g., `openai.RateLimitError: Error code: 429 - insufficient_quota`), it means your OpenAI account has reached its usage limits or run out of credits.
+        *   **Action:** Check your [OpenAI account dashboard](https://platform.openai.com/account/usage) for details on your current plan, usage, and billing status. You may need to add credits or upgrade your plan. The application will display a warning if this occurs, and explanations will be temporarily unavailable.
+
+*   **"No module named 'llama_cpp'" / Llama C++ Issues:**
+    *   These should no longer occur as the local Llama model has been replaced by the OpenAI API. If you see such errors, ensure you have pulled the latest code and that old Llama-related dependencies are not interfering.
+
 This README provides a snapshot of the Pet-Match Recommender project's design, components, and the journey of its development, including the recent shift to using OpenAI for enhanced explanation generation. 
