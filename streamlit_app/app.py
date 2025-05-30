@@ -536,9 +536,17 @@ def create_adopter_profile_ui():
 
 def display_pet_recommendation(pet_data: pd.Series, index: int):
     """Display a single pet recommendation."""
-    pet_name = pet_data.get('Name', f"Pet #{pet_data.get('Animal ID', 'Unknown')}")
+    # Retrieve pet name and Animal ID
+    raw_pet_name = pet_data.get('Name')
+    animal_id = pet_data.get('Animal ID', 'Unknown ID') # Ensure animal_id has a fallback
+
+    # Handle NaN or None names by using a default format
+    if pd.isna(raw_pet_name) or raw_pet_name == 'nan': # Check for NaN, None, or literal 'nan' string
+        pet_name = f"Pet #{animal_id}"
+    else:
+        pet_name = str(raw_pet_name) # Ensure name is a string
     
-    st.markdown(f"### 🐾 {pet_name}")
+    st.markdown(f"### �� {pet_name}")
     
     # Pet details in a nice format
     col1, col2 = st.columns(2)
