@@ -184,12 +184,24 @@ class BatchProcessor:
     def get_column_safe(df: pd.DataFrame, column_name: str, default_value, batch_size: int) -> pd.Series:
         """Safely extract column with default values."""
         if column_name in df.columns:
-            series = df[column_name].fillna(value=default_value)
+            # Determine the value to use for filling NaNs within an existing column
+            fill_val_for_existing_column_nans = default_value
+            if default_value is None:
+                # If the intended default for Nones is None, use an empty string for fillna.
+                # parse_age_years will handle this and convert to DEFAULT_PET_AGE_YEARS.
+                # For other types, None might be a valid fill, but for age string parsing, this is safer.
+                fill_val_for_existing_column_nans = ""
+            
+            series = df[column_name].fillna(value=fill_val_for_existing_column_nans)
             if len(series) != batch_size:
-                logger.warning(f"Column {column_name} length mismatch: {len(series)} vs {batch_size}")
+                # This check might be too noisy if pets_df is sometimes shorter than batch_size (e.g. during sampling)
+                # Consider if this warning is essential or can be logged at a lower level / removed if sampling handles size.
+                logger.debug(f"Column {column_name} length after fillna: {len(series)}, expected batch_size: {batch_size}. This might be OK if df was sampled smaller than batch_size.")
             return series
         else:
-            logger.warning(f"Column {column_name} not found, using default: {default_value}")
+            # If column doesn't exist, create a new series filled with the original default_value.
+            # pd.Series([None] * batch_size) is valid if default_value is None.
+            logger.warning(f"Column {column_name} not found, creating series with default: {default_value}")
             return pd.Series([default_value] * batch_size)
     
     @staticmethod
