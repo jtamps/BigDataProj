@@ -127,6 +127,7 @@ cython_debug/
 
 # Streamlit files
 streamlit_app/.streamlit/secrets.toml
+/.streamlit/
 
 # macOS files
 .DS_Store
