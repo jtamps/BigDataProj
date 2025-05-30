@@ -537,23 +537,17 @@ def create_adopter_profile_ui():
 def display_pet_recommendation(pet_data: pd.Series, index: int):
     """Display a single pet recommendation."""
     raw_pet_name = pet_data.get('Name')
-    animal_id = pet_data.get('Animal ID', 'Unknown ID')
+    # animal_id = pet_data.get('Animal ID', 'Unknown ID') # Animal ID no longer needed for default name
 
-    # List of placeholder/invalid names to check (case-insensitive)
     invalid_names_to_check = ["nan", "unknown", "no name", "", None]
 
-    # Handle NaN, None, or common placeholder strings for names
     if pd.isna(raw_pet_name) or (isinstance(raw_pet_name, str) and raw_pet_name.strip().lower() in invalid_names_to_check):
-        pet_name_cleaned = f"Pet #{animal_id}"
+        pet_name_cleaned = "Unnamed Pet" # Hardcoded default name
     else:
-        # Clean the name: remove non-ASCII characters and strip leading/trailing whitespace
-        # This helps prevent the diamond question mark () issue.
         pet_name_cleaned = str(raw_pet_name).encode('ascii', 'ignore').decode('ascii').strip()
-        # If cleaning results in an empty string, fall back to default
-        if not pet_name_cleaned:
-            pet_name_cleaned = f"Pet #{animal_id}"
+        if not pet_name_cleaned: # If cleaning results in an empty string, also use default
+            pet_name_cleaned = "Unnamed Pet"
     
-    # Use the paw_print emoji directly in the f-string for clarity
     st.markdown(f"### 🐾 {pet_name_cleaned}")
     
     # Pet details in a nice format
