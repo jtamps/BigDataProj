@@ -189,7 +189,7 @@ def preprocess_batch_input_for_model(adopter_profile_from_ui: dict, pets_df_batc
     # Helper function for safe column access
     def get_column_or_default(df, column_name, default_value, batch_s):
         if column_name in df.columns:
-            return df[column_name].fillna(default_value)
+            return df[column_name].fillna(value=default_value)
         else:
             return pd.Series([default_value] * batch_s)
 
