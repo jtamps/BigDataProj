@@ -161,85 +161,62 @@ pets_df = load_parquet_data(PETS_DATA_PATH, "Pets")
 adopters_df_for_options = load_parquet_data(ADOPTERS_DATA_PATH, "Adopters (for UI options)")
 
 
-# --- Feature Preprocessing Function for Keras Model ---
-def preprocess_input_for_model(adopter_profile_from_ui: dict, pet_row_from_df: pd.Series) -> dict:
+# --- Feature Preprocessing Function for Keras Model (Single Instance) ---
+# Original preprocess_input_for_model remains for potential single use or reference
+
+# --- Batch Feature Preprocessing Function for Keras Model ---
+def preprocess_batch_input_for_model(adopter_profile_from_ui: dict, pets_df_batch: pd.DataFrame) -> dict:
     """
-    Prepare input dictionary for the Keras model prediction.
+    Prepare a batch input dictionary for the Keras model prediction.
     - adopter_profile_from_ui: A dictionary containing adopter's choices from Streamlit UI.
-                               Keys should be simple (e.g., 'age', 'housing', 'activity').
-    - pet_row_from_df: A pandas Series representing a single pet from the pets_df.
-                       Column names should match those in the pets_silver dataset.
+    - pets_df_batch: A pandas DataFrame representing a batch of pets.
     Returns:
         A dictionary where keys are feature names expected by the model
-        (e.g., 'adopter_age', 'pet_age_years') and values are tf.constant tensors
-        of shape (1, 1).
+        and values are tf.constant tensors of shape (batch_size, 1).
     """
-    input_dict = {}
+    batch_size = len(pets_df_batch)
+    batch_input_dict = {}
 
-    # --- Map Adopter UI input to MODEL_NUMERICAL_FEATURES ---
-    # Keys used here MUST match the Keras model's expected input feature names.
-    input_dict['age'] = np.array([[float(adopter_profile_from_ui['age'])]], dtype=np.float32)
-    input_dict['household_size'] = np.array([[int(adopter_profile_from_ui['household_size'])]], dtype=np.float32)
+    # --- Map Adopter UI input (repeated for batch) ---
+    batch_input_dict['age'] = np.full((batch_size, 1), float(adopter_profile_from_ui['age']), dtype=np.float32)
+    batch_input_dict['household_size'] = np.full((batch_size, 1), int(adopter_profile_from_ui['household_size']), dtype=np.float32)
+    batch_input_dict['housing'] = np.full((batch_size, 1), str(adopter_profile_from_ui['housing']), dtype=object)
+    batch_input_dict['activity_level'] = np.full((batch_size, 1), str(adopter_profile_from_ui['activity']), dtype=object)
+    has_pets_str_batch = str(adopter_profile_from_ui['has_prior_pets'])
+    batch_input_dict['has_owned_pets'] = np.full((batch_size, 1), has_pets_str_batch, dtype=object)
 
-    # --- Derive and Map Pet data to MODEL_NUMERICAL_FEATURES ---
-    pet_age_str = pet_row_from_df.get('Age upon Outcome', None)
-    input_dict['pet_age_years'] = np.array([[parse_age_years(pet_age_str)]], dtype=np.float32)
+    # --- Derive and Map Pet data for the batch ---
+    # Helper function for safe column access
+    def get_column_or_default(df, column_name, default_value, batch_s):
+        if column_name in df.columns:
+            return df[column_name].fillna(default_value)
+        else:
+            return pd.Series([default_value] * batch_s)
 
-
-    # --- Map Adopter UI input to MODEL_CATEGORICAL_FEATURES ---
-    # Keys used here MUST match the Keras model's expected input feature names.
-    input_dict['housing'] = np.array([[str(adopter_profile_from_ui['housing'])]], dtype=object)
-    input_dict['activity_level'] = np.array([[str(adopter_profile_from_ui['activity'])]], dtype=object)
-    has_pets_str = str(adopter_profile_from_ui['has_prior_pets']) # UI sends True/False, model needs string
-    input_dict['has_owned_pets'] = np.array([[has_pets_str]], dtype=object)
+    # Vectorized parsing of pet age
+    age_series = get_column_or_default(pets_df_batch, 'Age upon Outcome', None, batch_size)
+    pet_age_years_list = [parse_age_years(age_str) for age_str in age_series]
+    batch_input_dict['pet_age_years'] = np.array(pet_age_years_list, dtype=np.float32).reshape(-1, 1)
     
-    # --- Map Pet data to MODEL_CATEGORICAL_FEATURES ---
-    # Keys used here MUST match the Keras model's expected input feature names.
-    input_dict['pet_type'] = np.array([[str(pet_row_from_df.get('Animal Type', 'Unknown'))]], dtype=object)
-    input_dict['pet_breed'] = np.array([[str(pet_row_from_df.get('Breed', 'Unknown'))]], dtype=object)
-    input_dict['pet_color'] = np.array([[str(pet_row_from_df.get('Color', 'Unknown'))]], dtype=object)
-    
-    # Restore previously commented-out pet features, ensuring keys match updated MODEL_CATEGORICAL_FEATURES
-    input_dict['pet_size'] = np.array([[str(pet_row_from_df.get('Size', 'Medium'))]], dtype=object) 
-    input_dict['pet_activity_needs'] = np.array([[str(pet_row_from_df.get('activity_needs', 'Moderate'))]], dtype=object)
-    input_dict['pet_needs_experienced_owner'] = np.array([[str(pet_row_from_df.get('needs_experienced_owner', False))]], dtype=object)
-    input_dict['pet_good_with_children'] = np.array([[str(pet_row_from_df.get('good_with_children', True))]], dtype=object)
+    batch_input_dict['pet_type'] = get_column_or_default(pets_df_batch, 'Animal Type', 'Unknown', batch_size).astype(str).values.reshape(-1, 1)
+    batch_input_dict['pet_breed'] = get_column_or_default(pets_df_batch, 'Breed', 'Unknown', batch_size).astype(str).values.reshape(-1, 1)
+    batch_input_dict['pet_color'] = get_column_or_default(pets_df_batch, 'Color', 'Unknown', batch_size).astype(str).values.reshape(-1, 1)
+    batch_input_dict['pet_size'] = get_column_or_default(pets_df_batch, 'Size', 'Medium', batch_size).astype(str).values.reshape(-1, 1)
+    batch_input_dict['pet_activity_needs'] = get_column_or_default(pets_df_batch, 'activity_needs', 'Moderate', batch_size).astype(str).values.reshape(-1, 1)
+    batch_input_dict['pet_needs_experienced_owner'] = get_column_or_default(pets_df_batch, 'needs_experienced_owner', False, batch_size).astype(str).values.reshape(-1, 1)
+    batch_input_dict['pet_good_with_children'] = get_column_or_default(pets_df_batch, 'good_with_children', True, batch_size).astype(str).values.reshape(-1, 1)
 
-    # Sanity check: all model features (from updated global lists) must be present
+    # Sanity check for expected features
     all_expected_features = MODEL_NUMERICAL_FEATURES + MODEL_CATEGORICAL_FEATURES
-    
     for feature_name in all_expected_features:
-        if feature_name not in input_dict:
-            raise KeyError(f"Feature '{feature_name}' (expected by model based on global lists) is missing from the input_dict. "
-                           f"Adopter Profile Keys: {list(adopter_profile_from_ui.keys())}, "
-                           f"Pet Row Columns: {pet_row_from_df.index.tolist()}")
-        # Ensure correct shape (1,1) and type for Keras functional model inputs
-        current_val = input_dict[feature_name]
-        if not isinstance(current_val, np.ndarray) or current_val.shape != (1,1):
-             logger.warning(f"Feature {feature_name} has unexpected shape/type: {type(current_val)}, {current_val.shape if hasattr(current_val, 'shape') else 'N/A'}. Attempting reshape.")
-             try:
-                 # Check if feature is numerical or categorical based on our definitive lists
-                 if feature_name in MODEL_NUMERICAL_FEATURES:
-                     input_dict[feature_name] = np.array([[current_val.item() if hasattr(current_val, 'item') else current_val]], dtype=np.float32)
-                 else: # Categorical
-                     input_dict[feature_name] = np.array([[str(current_val.item() if hasattr(current_val, 'item') else current_val)]], dtype=object)
-             except Exception as e:
-                 logger.error(f"Failed to reshape/recast {feature_name}: {e}")
-                 raise ValueError(f"Could not prepare feature {feature_name} correctly for the model.") from e
+        if feature_name not in batch_input_dict:
+            raise KeyError(f"Feature '{feature_name}' is missing from the batch_input_dict.")
+        if batch_input_dict[feature_name].shape != (batch_size, 1):
+            raise ValueError(f"Feature '{feature_name}' has incorrect shape: {batch_input_dict[feature_name].shape}. Expected ({batch_size}, 1)")
 
-    # Convert numpy arrays to tf.constant - Keras model.predict expects this structure
-    # when inputs are a dictionary.
-    tf_input_dict = {name: tf.constant(val) for name, val in input_dict.items()}
-    
-    # No longer filter based on a smaller list of error_features. Pass all prepared features.
-    # dropped_keys logic removed as we expect all keys in input_dict to be used.
-    
-    # Final check if all expected keys (from global lists) are present in the final dictionary
-    for expected_key in all_expected_features:
-        if expected_key not in tf_input_dict:
-            raise KeyError(f"Critical error: Expected feature '{expected_key}' not found in final_tf_input_dict. Available keys: {list(tf_input_dict.keys())}")
-
-    return tf_input_dict
+    # Convert numpy arrays to tf.constant
+    tf_batch_input_dict = {name: tf.constant(val) for name, val in batch_input_dict.items()}
+    return tf_batch_input_dict
 
 # --- Function to generate explanation (Original from line 112) ---
 @st.cache_data 
@@ -322,89 +299,44 @@ def get_match_explanation(_adopter_profile: dict, _pet_details: pd.Series, _llm_
 # --- Recommendation Logic (Original from line ~165) ---
 @st.cache_data 
 def rank_pets(adopter_profile: dict, all_pets_df: pd.DataFrame, _model: tf.keras.Model, top_k: int = TOP_K_RECOMMENDATIONS):
-    # adopter_profile is now a dict from UI session state
     adopter_identifier = adopter_profile.get('profile_uuid', str(uuid.uuid4())) 
     logger.info(f"Ranking pets for adopter profile ID: {adopter_identifier}")
-    scores = []
 
     if not _model:
         logger.error("Recommendation Model is not loaded. Cannot make predictions.")
         st.error("Recommendation Model is not loaded. Cannot make predictions.")
-        return pd.DataFrame(), [] # Return empty dataframe and empty list of scored pets
+        return pd.DataFrame(), pd.DataFrame()
     
     if all_pets_df.empty:
         logger.warning("Pets DataFrame is empty. Cannot rank pets.")
         st.warning("Pet data is not available to rank.")
-        return pd.DataFrame(), []
+        return pd.DataFrame(), pd.DataFrame()
 
-    # Sample pets to score for performance in interactive app
-    # Ensure sampling doesn't fail if len(all_pets_df) < 2000
     sample_n = min(len(all_pets_df), 2000)
     if sample_n == 0:
         logger.warning("No pets to sample for scoring.")
-        return pd.DataFrame(), []
+        return pd.DataFrame(), pd.DataFrame()
         
-    pets_to_score_df = all_pets_df.sample(sample_n, random_state=42) 
+    pets_to_score_df = all_pets_df.sample(sample_n, random_state=42).copy() # Use a copy for adding scores
     
-    scored_pet_details = [] # To store rows of pets that were successfully scored
+    try:
+        logger.info(f"Preprocessing batch of {len(pets_to_score_df)} pets for prediction.")
+        batch_model_input = preprocess_batch_input_for_model(adopter_profile, pets_to_score_df)
+        logger.info(f"Making batch prediction for {len(pets_to_score_df)} pets.")
+        all_scores_array = _model.predict(batch_model_input, verbose=0)
+        
+        # all_scores_array is (batch_size, 1), flatten or reshape as needed
+        pets_to_score_df['score'] = all_scores_array.flatten() 
 
-    for _, pet_row in pets_to_score_df.iterrows():
-        try:
-            # `adopter_profile` is the dict from UI, `pet_row` is a Series from pets_df
-            model_input = preprocess_input_for_model(adopter_profile, pet_row)
-            score = _model.predict(model_input, verbose=0)[0][0]
-            scores.append({'pet_id': pet_row['Animal ID'], 'score': score})
-            scored_pet_details.append(pet_row) # Save the full pet_row
-        except Exception as e:
-            # Log the adopter profile keys and pet_row columns for easier debugging
-            logger.error(f"Error predicting for pet {pet_row.get('Animal ID', 'Unknown ID')} with adopter {adopter_identifier}: {e}. "
-                         f"Adopter Profile Keys: {list(adopter_profile.keys())}, "
-                         f"Pet Row Columns: {pet_row.index.tolist()}")
-            # Log problematic model_input only if essential and careful about verbosity/PII
-            # logger.debug(f"Problematic model_input: {model_input}") 
-            continue 
+    except Exception as e:
+        logger.error(f"Error during batch prediction for adopter {adopter_identifier}: {e}")
+        # Fallback or re-raise, for now, return empty if batch fails
+        return pd.DataFrame(), pd.DataFrame()
 
-    if not scores:
-        logger.info(f"No scores were generated for adopter profile ID: {adopter_identifier}")
-        # st.info("Could not generate scores for any pets with the current profile.") # Already handled by empty df
-        return pd.DataFrame(), []
-
-    ranked_scores_df = pd.DataFrame(scores).sort_values(by='score', ascending=False)
+    ranked_df = pets_to_score_df.sort_values(by='score', ascending=False)
     
-    # Merge with (already sampled and scored) pet details to get full pet info
-    # `scored_pet_details` is a list of Series, convert to DataFrame
-    scored_pets_info_df = pd.DataFrame(scored_pet_details)
-    
-    # We need to ensure 'pet_id' in ranked_scores_df matches 'Animal ID' in scored_pets_info_df for merging
-    # If 'Animal ID' is already the index of scored_pets_info_df, adjust merge
-    # For simplicity, assuming 'Animal ID' is a column
-    if 'Animal ID' not in scored_pets_info_df.columns:
-        logger.error("'Animal ID' not found in columns of scored_pets_info_df. Cannot merge for full details.")
-        # Fallback: return ranked scores but pet details might be just IDs
-        # Or, try to find another ID. For now, we rely on 'Animal ID'.
-        # This indicates an issue with `scored_pet_details` assembly or `pets_df` structure.
-        # We can reconstruct from pets_df using the pet_ids in ranked_scores_df.
-        top_k_pet_ids = ranked_scores_df.head(top_k)['pet_id'].tolist()
-        final_ranked_df = all_pets_df[all_pets_df['Animal ID'].isin(top_k_pet_ids)].copy()
-        # Need to add the 'score' back to this final_ranked_df
-        final_ranked_df = pd.merge(final_ranked_df, ranked_scores_df[['pet_id', 'score']], left_on='Animal ID', right_on='pet_id')
-        final_ranked_df = final_ranked_df.sort_values(by='score', ascending=False).drop_duplicates(subset=['Animal ID'])
-
-    else:
-        # Merge ranked scores with the details of the pets that were scored
-        ranked_df_full_details = pd.merge(
-            ranked_scores_df,
-            scored_pets_info_df, # This contains the subset of pets that were scored
-            left_on='pet_id',
-            right_on='Animal ID', # Assuming 'Animal ID' is the common key
-            how='left' 
-        ).drop_duplicates(subset=['pet_id']) # Should not be necessary if IDs are unique in pets_to_score_df
-
-    logger.info(f"Ranked {len(ranked_scores_df)} pets for adopter {adopter_identifier}. Top {top_k} scores: {ranked_scores_df.head(top_k)['score'].tolist()}")
-    # Return the top_k from the dataframe that has full details
-    if 'final_ranked_df' in locals():
-         return final_ranked_df.head(top_k), ranked_scores_df # Return all scores for potential debugging/analysis
-    return ranked_df_full_details.head(top_k), ranked_scores_df
+    logger.info(f"Ranked {len(ranked_df)} pets for adopter {adopter_identifier}. Top {top_k} scores: {ranked_df.head(top_k)['score'].tolist()}")
+    return ranked_df.head(top_k), ranked_df # Return all scored pets as the second df
 
 
 # --- UI Layout ---
@@ -576,5 +508,3 @@ else:
 # Persist button click state to avoid re-showing "No recommendations" on first load
 if 'find_matches_button' in st.session_state and st.session_state.find_matches_button:
     st.session_state.find_matches_button_clicked = True
-else:
-    st.session_state.find_matches_button_clicked = False
