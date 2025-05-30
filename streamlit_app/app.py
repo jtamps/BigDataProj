@@ -451,9 +451,6 @@ def show_app_status():
         return False
     
     # Show warnings for optional components
-    if app_resources['llm_model'] is None:
-        st.warning("💬 LLM explanations are not available (this is optional)")
-    
     if app_resources['adopters_df'].empty:
         st.warning("📊 Adopter data not loaded - using default options")
     
@@ -581,8 +578,6 @@ def display_pet_recommendation(pet_data: pd.Series, index: int):
                 str(pet_data.get('Animal ID', f'pet_{index}'))
             )
             st.info(f"**Why this is a great match:** {explanation}")
-    else:
-        st.info("💬 _Detailed explanations would appear here if LLM was available_")
 
 # --- Main App UI ---
 def main():
