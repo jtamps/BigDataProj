@@ -10,6 +10,7 @@ import uuid
 import re
 from typing import Dict, Tuple, Optional, List
 from contextlib import contextmanager
+import openai # Import OpenAI
 
 # Configure logging with better formatting
 logging.basicConfig(
@@ -36,16 +37,14 @@ class Config:
     REC_MODEL_PATH = os.path.join(SCRIPT_DIR, "pet_model.h5")
     PETS_DATA_PATH = os.path.join(PROJECT_ROOT, "data/pets_silver_local/pets_silver")
     ADOPTERS_DATA_PATH = os.path.join(PROJECT_ROOT, "data/adopters_local/Adopters")
-    LLAMA_MODEL_PATH = os.getenv("LLAMA_MODEL_PATH", os.path.join(SCRIPT_DIR, "models/llama-3-8b-instruct.Q4_K_M.gguf"))
     
     # Model parameters
     TOP_K_RECOMMENDATIONS = 3
     BATCH_SIZE = 2000
     DEFAULT_PET_AGE_YEARS = 1.0
     
-    # Llama parameters
-    N_GPU_LAYERS = -1
-    N_CTX = 2048
+    # OpenAI parameters
+    OPENAI_MODEL = "gpt-3.5-turbo" # Or your preferred model
     
     # Feature definitions (must match training script)
     NUMERICAL_FEATURES = ['age', 'household_size', 'pet_age_years']
@@ -65,7 +64,6 @@ def error_handler(operation_name: str, show_user_error: bool = True):
         logger.error(f"Error in {operation_name}: {str(e)}", exc_info=True)
         if show_user_error:
             st.error(f"Error in {operation_name}: {str(e)}")
-        raise
 
 def safe_operation(func, default_value=None, operation_name: str = "operation"):
     """Safely execute an operation with error handling."""
@@ -74,20 +72,6 @@ def safe_operation(func, default_value=None, operation_name: str = "operation"):
     except Exception as e:
         logger.error(f"Error in {operation_name}: {str(e)}")
         return default_value
-
-# --- Llama Availability Check ---
-@st.cache_resource
-def check_llama_availability() -> Tuple[bool, Optional[type]]:
-    """Check if llama_cpp is available, with caching to avoid repeated checks."""
-    try:
-        from llama_cpp import Llama
-        logger.info("llama_cpp is available. LLM explanations will be enabled if model is found.")
-        return True, Llama
-    except ImportError:
-        logger.warning("llama_cpp not available. LLM explanations will be disabled.")
-        return False, None
-
-LLAMA_AVAILABLE, Llama = check_llama_availability()
 
 # --- Utility Functions ---
 def parse_age_years(age_str: str) -> float:
@@ -112,31 +96,25 @@ def parse_age_years(age_str: str) -> float:
     
     return Config.DEFAULT_PET_AGE_YEARS
 
-# --- Model and Data Loading ---
+# --- OpenAI Client Setup ---
 @st.cache_resource
-def load_llama_model(model_path: str) -> Optional[object]:
-    """Load Llama model with comprehensive error handling."""
-    if not LLAMA_AVAILABLE:
-        logger.info("Llama not available, skipping model load.")
+def get_openai_client() -> Optional[openai.OpenAI]:
+    """Initialize and return the OpenAI client. API key is fetched from st.secrets."""
+    api_key = st.secrets.get("OPENAI_API_KEY")
+    if not api_key:
+        logger.warning("OpenAI API key not found in st.secrets. LLM explanations will be disabled.")
+        st.warning("OpenAI API key not configured. Explanations are disabled.", icon="🔑")
         return None
-    
-    if not os.path.exists(model_path):
-        logger.warning(f"Llama model not found at {model_path}")
+    try:
+        client = openai.OpenAI(api_key=api_key)
+        logger.info("OpenAI client initialized successfully.")
+        return client
+    except Exception as e:
+        logger.error(f"Failed to initialize OpenAI client: {e}", exc_info=True)
+        st.error("Failed to initialize OpenAI client. Explanations may be unavailable.")
         return None
-    
-    with error_handler("Llama model loading", show_user_error=False):
-        logger.info(f"Loading Llama model from {model_path}")
-        llm = Llama(
-            model_path=model_path,
-            n_gpu_layers=Config.N_GPU_LAYERS,
-            n_ctx=Config.N_CTX,
-            verbose=False
-        )
-        logger.info("Llama model loaded successfully.")
-        return llm
-    
-    return None
 
+# --- Model and Data Loading ---
 @st.cache_resource
 def load_recommendation_model(model_path: str) -> Optional[tf.keras.Model]:
     """Load TensorFlow recommendation model with error handling."""
@@ -325,13 +303,16 @@ def rank_pets_batch(adopter_profile: Dict, all_pets_df: pd.DataFrame, _model: tf
     logger.info(f"Ranking complete. Top {top_k} scores: {top_recommendations['score'].tolist()}")
     return top_recommendations, ranked_pets
 
-# --- LLM Explanation Generation ---
+# --- LLM Explanation Generation (Now OpenAI) ---
 @st.cache_data
 def generate_match_explanation(_adopter_profile: Dict, _pet_details: pd.Series, 
-                             _llm_model: object, pet_id: str) -> str:
-    """Generate LLM explanation with error handling."""
-    if not _llm_model:
-        return "LLM explanations are currently unavailable."
+                             _openai_client: openai.OpenAI, pet_id: str) -> str:
+    """Generate LLM explanation using OpenAI API with error handling."""
+    if not _openai_client:
+        # This case should ideally be handled before calling, 
+        # e.g., by checking if the client is available in app_resources
+        logger.warning("OpenAI client not available for generating explanation.")
+        return "Explanations are currently unavailable (client not initialized)."
     
     try:
         # Extract adopter info safely
@@ -353,48 +334,53 @@ def generate_match_explanation(_adopter_profile: Dict, _pet_details: pd.Series,
             'sex': _pet_details.get('Sex upon Outcome', 'N/A')
         }
         
-        # Create prompt
-        prompt = f"""A {adopter_info['age']}-year-old person with a {adopter_info['household_size']}-person household, living in a {adopter_info['housing']}, with {adopter_info['activity']} activity level, who has {adopter_info['has_prior_pets']} owned pets before, is being matched with {pet_info['name']}, a {pet_info['age']} {pet_info['type']} ({pet_info['breed']}, {pet_info['size']}).
+        # Create prompt (can be refined for OpenAI if needed)
+        system_message = "You are a helpful pet adoption counselor. Be positive, encouraging, and concise (2-3 sentences). Focus on compatibility aspects derived from the provided profiles."
+        user_prompt = f"""Consider an adopter who is {adopter_info['age']} years old, has a household of {adopter_info['household_size']}, lives in a {adopter_info['housing']}, has a {adopter_info['activity']} activity level, and {adopter_info['has_prior_pets']} owned pets before. 
+They are being matched with a pet named {pet_info['name']}, a {pet_info['age']} {pet_info['type']} ({pet_info['breed']}, {pet_info['size']}).
 
-Briefly explain in 2-3 sentences why this could be a great match, focusing on compatibility."""
+Why might this pet be a good match for this adopter?"""
         
-        # Generate explanation
-        completion = _llm_model.create_chat_completion(
+        logger.info(f"Sending explanation prompt to OpenAI for pet {pet_id}")
+        completion = _openai_client.chat.completions.create(
+            model=Config.OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": "You are a helpful pet adoption counselor. Be positive and concise."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_prompt}
             ],
-            max_tokens=150,
+            max_tokens=120, # Adjusted for conciseness
             temperature=0.7
         )
         
-        explanation = completion['choices'][0]['message']['content'].strip()
-        logger.info(f"Generated explanation for pet {pet_id}")
+        explanation = completion.choices[0].message.content.strip()
+        logger.info(f"Generated OpenAI explanation for pet {pet_id}")
         return explanation
         
     except Exception as e:
-        logger.error(f"Error generating explanation for pet {pet_id}: {e}")
-        return "Could not generate explanation at this time."
+        logger.error(f"Error generating OpenAI explanation for pet {pet_id}: {e}", exc_info=True)
+        # Provide a more user-friendly error if it's an API connection or auth issue
+        if isinstance(e, openai.APIConnectionError):
+            return "Could not connect to the explanation service. Please try again later."
+        if isinstance(e, openai.AuthenticationError):
+            return "Explanation service authentication failed. Please check API key configuration."
+        return "Could not generate an explanation at this time due to an unexpected error."
 
 # --- Initialize App Resources ---
 @st.cache_resource
 def initialize_app_resources():
     """Initialize all app resources with error handling."""
     resources = {
-        'llm_model': None,
+        'openai_client': None,
         'rec_model': None,
         'pets_df': pd.DataFrame(),
         'adopters_df': pd.DataFrame(),
         'errors': []
     }
     
-    # Load LLM model
-    resources['llm_model'] = safe_operation(
-        lambda: load_llama_model(Config.LLAMA_MODEL_PATH),
-        default_value=None,
-        operation_name="LLM model loading"
-    )
-    
+    # Initialize OpenAI Client
+    resources['openai_client'] = get_openai_client()
+    # No explicit error append here, get_openai_client handles logging/st.warning
+
     # Load recommendation model
     resources['rec_model'] = safe_operation(
         lambda: load_recommendation_model(Config.REC_MODEL_PATH),
@@ -445,16 +431,22 @@ initialize_session_state()
 def show_app_status():
     """Display app status and any critical errors."""
     if app_resources['errors']:
-        st.error("⚠️ Some components failed to load:")
+        st.error("⚠️ Some critical components failed to load:")
         for error in app_resources['errors']:
             st.error(f"• {error}")
-        return False
+        # Do not return False here, let it proceed to show OpenAI specific warnings if any
+        # return False 
     
-    # Show warnings for optional components
+    # Check OpenAI client status specifically (already warned by get_openai_client if key missing)
+    if app_resources['openai_client'] is None:
+        # The get_openai_client function already shows a st.warning if key is missing.
+        # We could add another message here if needed, or rely on its warning.
+        logger.info("OpenAI client not initialized, explanations will be off.")
+    
     if app_resources['adopters_df'].empty:
         st.warning("📊 Adopter data not loaded - using default options")
     
-    return True
+    return not app_resources['errors'] # Return True if no *critical* errors
 
 def get_ui_options():
     """Get options for UI dropdowns from data or defaults."""
@@ -578,13 +570,13 @@ def display_pet_recommendation(pet_data: pd.Series, index: int):
         help="Higher scores indicate better compatibility"
     )
     
-    # LLM explanation
-    if app_resources['llm_model']:
+    # LLM explanation (now OpenAI)
+    if app_resources['openai_client']:
         with st.spinner("Generating explanation..."):
             explanation = generate_match_explanation(
                 st.session_state.adopter_profile,
                 pet_data,
-                app_resources['llm_model'],
+                app_resources['openai_client'],
                 str(pet_data.get('Animal ID', f'pet_{index}'))
             )
             st.info(f"**Why this is a great match:** {explanation}")
