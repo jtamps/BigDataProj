@@ -100,13 +100,21 @@ def parse_age_years(age_str: str) -> float:
 @st.cache_resource
 def get_openai_client() -> Optional[openai.OpenAI]:
     """Initialize and return the OpenAI client. API key is fetched from st.secrets."""
-    api_key = st.secrets.get("OPENAI_API_KEY")
-    if not api_key:
-        logger.warning("OpenAI API key not found in st.secrets. LLM explanations will be disabled.")
-        st.warning("OpenAI API key not configured. Explanations are disabled.", icon="🔑")
+    
+    # Explicitly log the type and content of what st.secrets retrieves
+    raw_api_key_from_secrets = st.secrets.get("OPENAI_API_KEY")
+    logger.info(f"Attempting to retrieve OPENAI_API_KEY from st.secrets.")
+    logger.info(f"  Type of retrieved key: {type(raw_api_key_from_secrets)}")
+    logger.info(f"  Value of retrieved key (first 5 chars if string): '{(str(raw_api_key_from_secrets)[:5] + "...") if isinstance(raw_api_key_from_secrets, str) and len(raw_api_key_from_secrets) > 5 else raw_api_key_from_secrets}'")
+
+    api_key = raw_api_key_from_secrets
+    # Treat empty string as not found as well
+    if not api_key or not isinstance(api_key, str) or api_key.strip() == "": 
+        logger.warning("OpenAI API key not found or is empty in st.secrets. LLM explanations will be disabled.")
+        st.warning("OpenAI API key not configured or is empty. Explanations are disabled.", icon="🔑")
         return None
     try:
-        client = openai.OpenAI(api_key=api_key)
+        client = openai.OpenAI(api_key=api_key.strip()) # Ensure to strip whitespace
         logger.info("OpenAI client initialized successfully.")
         return client
     except Exception as e:
