@@ -635,7 +635,19 @@ def display_pet_recommendation(pet_data: pd.Series, index: int):
                 "concise" # Current explanation style
             )
             if explanation:
-                st.info(f"**Why this is a great match:** {explanation}")
+                # Contextualize the intro text based on the score
+                score_value = pet_data.get('score', 0.0) # Ensure we have the score
+                match_intro_text = "**Why this is a great match:**" # Default
+                if score_value >= 0.90:
+                    match_intro_text = "**Why this is an excellent match:**"
+                elif score_value >= 0.75:
+                    match_intro_text = "**Why this is a good match:**"
+                elif score_value >= 0.50:
+                    match_intro_text = "**Why this could be a worthwhile consideration:**"
+                else:
+                    match_intro_text = "**Regarding this pet:**"
+                
+                st.info(f"{match_intro_text} {explanation}")
 
 # --- Main App UI ---
 def main():
